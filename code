@@ -1,0 +1,101 @@
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.impl.HttpSolrClient;
+import org.apache.solr.client.solrj.response.QueryResponse;
+import org.apache.solr.client.solrj.response.UpdateResponse;
+import org.apache.solr.common.SolrInputDocument;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class SolrEmployeeOperations {
+    private final SolrClient solrClient;
+
+    public SolrEmployeeOperations(String solrUrl) {
+        this.solrClient = new HttpSolrClient.Builder(solrUrl).build();
+    }
+
+    public void createCollection(String collectionName) {
+        System.out.println("Collection '" + collectionName + "' should be created in Solr Admin.");
+    }
+
+    public void indexData(String collectionName, Map<String, Object> employeeData, String excludeColumn) throws Exception {
+        SolrInputDocument doc = new SolrInputDocument();
+        for (Map.Entry<String, Object> entry : employeeData.entrySet()) {
+            if (!entry.getKey().equalsIgnoreCase(excludeColumn)) {
+                doc.addField(entry.getKey(), entry.getValue());
+            }
+        }
+        solrClient.add(collectionName, doc);
+        solrClient.commit(collectionName);
+        System.out.println("Data indexed into '" + collectionName + "', excluding column: " + excludeColumn);
+    }
+
+    public List<Map<String, Object>> searchByColumn(String collectionName, String columnName, String columnValue) throws Exception {
+        SolrQuery query = new SolrQuery();
+        query.setQuery(columnName + ":" + columnValue);
+        QueryResponse response = solrClient.query(collectionName, query);
+        return response.getResults();
+    }
+
+    public long getEmpCount(String collectionName) throws Exception {
+        SolrQuery query = new SolrQuery("*:*");
+        query.setRows(0);
+        QueryResponse response = solrClient.query(collectionName, query);
+        return response.getResults().getNumFound();
+    }
+
+    public void delEmpById(String collectionName, String employeeId) throws Exception {
+        UpdateResponse response = solrClient.deleteById(collectionName, employeeId);
+        solrClient.commit(collectionName);
+        System.out.println("Deleted employee ID '" + employeeId + "' from collection '" + collectionName + "'");
+    }
+
+    public Map<String, Long> getDepFacet(String collectionName) throws Exception {
+        SolrQuery query = new SolrQuery("*:*");
+        query.setFacet(true);
+        query.addFacetField("department");
+        QueryResponse response = solrClient.query(collectionName, query);
+
+        return response.getFacetField("department").getValues()
+                .stream()
+                .collect(Collectors.toMap(
+                        facet -> facet.getName(),
+                        facet -> facet.getCount()
+                ));
+    }
+
+    public static void main(String[] args) throws Exception {
+        String solrUrl = "http://localhost:8983/solr";
+        SolrEmployeeOperations solrOps = new SolrEmployeeOperations(solrUrl);
+
+        String collectionName = "Hash_VinehaV";
+        String phoneCollection = "Hash_1234";
+
+        solrOps.createCollection(collectionName);
+        solrOps.createCollection(phoneCollection);
+
+        long empCount = solrOps.getEmpCount(collectionName);
+        System.out.println("Employee count: " + empCount);
+
+        Map<String, Object> employeeData = Map.of(
+                "employeeID", "E02002",
+                "fullName", "Kai Le",
+                "jobTitle", "Controls Engineer",
+                "department", "Engineering",
+                "gender", "Male"
+        );
+        solrOps.indexData(collectionName, employeeData, "department");
+
+        empCount = solrOps.getEmpCount(collectionName);
+        System.out.println("Updated Employee count: " + empCount);
+
+        solrOps.delEmpById(collectionName, "E02002");
+
+        empCount = solrOps.getEmpCount(collectionName);
+        System.out.println("Employee count after deletion: " + empCount);
+
+        List<Map<String, Object>> results = solrOps.searchByColumn(collectionName, "department", "Engineering");
+        System.out.println("Search results for department 'Engineering': " + results.size());
+
+        results = solrOps.searchByColumn(collection
